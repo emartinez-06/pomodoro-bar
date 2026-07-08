@@ -15,7 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let statusInfoItem = NSMenuItem()
     private let startPauseItem = NSMenuItem()
     private let resetItem = NSMenuItem()
-    private let roundsItem = NSMenuItem()
+    private let dailyGoalItem = NSMenuItem()
     private let focusBorderItem = NSMenuItem()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -35,7 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        border.hide()
+        border.shutdown()
     }
 
     func menuWillOpen(_ menu: NSMenu) {
@@ -72,17 +72,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        roundsItem.title = "Rounds"
-        let roundsMenu = NSMenu()
-        roundsMenu.autoenablesItems = false
-        for count in 1...8 {
-            let item = NSMenuItem(title: "\(count)", action: #selector(selectRounds(_:)), keyEquivalent: "")
+        dailyGoalItem.title = "Daily Goal"
+        let goalMenu = NSMenu()
+        goalMenu.autoenablesItems = false
+        for count in 1...12 {
+            let item = NSMenuItem(title: "\(count)", action: #selector(selectDailyGoal(_:)), keyEquivalent: "")
             item.target = self
             item.tag = count
-            roundsMenu.addItem(item)
+            goalMenu.addItem(item)
         }
-        roundsItem.submenu = roundsMenu
-        menu.addItem(roundsItem)
+        dailyGoalItem.submenu = goalMenu
+        menu.addItem(dailyGoalItem)
 
         focusBorderItem.title = "Green Focus Border"
         focusBorderItem.target = self
@@ -108,7 +108,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func startPause() {
         switch engine.phase {
         case .idle:
-            engine.start(rounds: store.rounds)
+            // A run covers exactly the sessions still needed to reach the
+            // daily goal, so completing a run means completing the day.
+            engine.start(rounds: max(store.dailyGoal - store.todayCount(), 1))
             startTimer()
         default:
             if engine.isPaused {
@@ -128,8 +130,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         render()
     }
 
-    @objc private func selectRounds(_ sender: NSMenuItem) {
-        store.rounds = sender.tag
+    @objc private func selectDailyGoal(_ sender: NSMenuItem) {
+        store.dailyGoal = sender.tag
         render()
     }
 
@@ -199,16 +201,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             startPauseItem.title = engine.isPaused ? "Resume" : "Pause"
         }
         resetItem.isEnabled = engine.phase != .idle
-        if let submenu = roundsItem.submenu {
+        if let submenu = dailyGoalItem.submenu {
             for item in submenu.items {
-                item.state = item.tag == store.rounds ? .on : .off
+                item.state = item.tag == store.dailyGoal ? .on : .off
             }
         }
         focusBorderItem.state = store.focusBorderEnabled && border.isAvailable ? .on : .off
 
+        let todayCount = store.todayCount()
         sessionsView.update(
-            todayCount: store.todayCount(),
-            pendingInRun: engine.pendingRounds,
+            todayCount: todayCount,
+            pendingToGoal: max(store.dailyGoal - todayCount, 0),
             history: store.lastSevenDays()
         )
 
@@ -222,11 +225,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             inFocusedWork = false
         }
-        if inFocusedWork && store.focusBorderEnabled {
-            border.show()
-        } else {
-            border.hide()
-        }
+        // The warm server is scoped to active runs: zero resource cost while
+        // idle, instant color flips for every transition within a run.
+        border.apply(
+            enabled: store.focusBorderEnabled && engine.phase != .idle,
+            focused: inFocusedWork
+        )
     }
 
     private var ringColor: NSColor? {
@@ -249,8 +253,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         switch engine.phase {
         case .idle:
             base = "Idle"
-        case .work(let round):
-            base = "Work, round \(round) of \(engine.totalRounds)"
+        case .work:
+            base = "Work, session \(store.todayCount() + 1) of \(store.dailyGoal) today"
         case .shortBreak:
             base = "Short break"
         case .longBreak:

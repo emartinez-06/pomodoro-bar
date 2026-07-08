@@ -5,12 +5,12 @@
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 A tiny, dependency-free macOS menu bar Pomodoro timer.
-Work 25 minutes, break 5, long break 15 after every 4th round, for a configurable number of rounds.
+Work 25 minutes, break 5, long break 15 after every 4th round, toward a configurable daily goal (default 10 sessions).
 A drawn progress ring and `MM:SS` countdown live in the menu bar; clicking it shows today's completed sessions as dots plus a 7-day history chart.
 Shift+Cmd+A starts, pauses, and resumes the run from anywhere, no accessibility permissions required.
 
 Optionally, while a work interval is running, the focused window is outlined in green via [JankyBorders](https://github.com/FelixKratz/JankyBorders), a visual "locked in" cue that pairs well with AeroSpace-style window gaps.
-The border vanishes during breaks, pauses, and idle.
+PomodoroBar runs a borders process of its own only while a run is active, so the border appears the instant work starts, vanishes instantly for breaks and pauses, and costs nothing while idle.
 
 Sessions are announced by system sounds only (Glass at break time, Ping back to work, Hero when the run completes); there are no notifications, no network access, and no files beyond UserDefaults.
 
@@ -26,7 +26,7 @@ See [SPEC.md](SPEC.md) for the full behavioral and architectural specification.
 
 ![Dropdown sessions](assets/dropdown-sessions.png)
 
-Filled dots are today's completed sessions, hollow dots are what's left in the active run, and the chart shows the last seven days with today highlighted.
+Filled dots are today's completed sessions, hollow dots are what's left of the daily goal, and the chart shows the last seven days with today highlighted.
 
 ## Setup
 

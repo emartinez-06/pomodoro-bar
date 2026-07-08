@@ -1,19 +1,20 @@
 import AppKit
 
 /// Dropdown graphic: today's completed sessions as dots, hollow dots for the
-/// remainder of the active run, and a seven-day history bar chart below.
+/// sessions still needed to reach the daily goal, and a seven-day history
+/// bar chart below.
 final class SessionsView: NSView {
     private static let maxDots = 12
     private static let dotDiameter: CGFloat = 8
     private static let dotSpacing: CGFloat = 5
 
     private var todayCount = 0
-    private var pendingInRun = 0
+    private var pendingToGoal = 0
     private var history: [SessionStore.DayCount] = []
 
-    func update(todayCount: Int, pendingInRun: Int, history: [SessionStore.DayCount]) {
+    func update(todayCount: Int, pendingToGoal: Int, history: [SessionStore.DayCount]) {
         self.todayCount = todayCount
-        self.pendingInRun = pendingInRun
+        self.pendingToGoal = pendingToGoal
         self.history = history
         needsDisplay = true
     }
@@ -44,7 +45,7 @@ final class SessionsView: NSView {
     private func drawDots(in inset: NSRect, top: CGFloat) {
         let y = top - Self.dotDiameter
         let filled = min(todayCount, Self.maxDots)
-        let hollow = min(pendingInRun, Self.maxDots - filled)
+        let hollow = min(pendingToGoal, Self.maxDots - filled)
         var x = inset.minX
 
         for index in 0..<(filled + hollow) {

@@ -11,10 +11,10 @@ final class SessionStore {
     }
 
     private static let sessionsKey = "sessionsByDay"
-    private static let roundsKey = "rounds"
+    private static let dailyGoalKey = "dailyGoal"
     private static let focusBorderKey = "focusBorderEnabled"
     private static let retentionDays = 30
-    private static let defaultRounds = 4
+    private static let defaultDailyGoal = 10
 
     private let defaults = UserDefaults.standard
     private let calendar = Calendar.current
@@ -25,12 +25,12 @@ final class SessionStore {
         return formatter
     }()
 
-    var rounds: Int {
+    var dailyGoal: Int {
         get {
-            let stored = defaults.integer(forKey: Self.roundsKey)
-            return stored == 0 ? Self.defaultRounds : min(max(stored, 1), 8)
+            let stored = defaults.integer(forKey: Self.dailyGoalKey)
+            return stored == 0 ? Self.defaultDailyGoal : min(max(stored, 1), 12)
         }
-        set { defaults.set(newValue, forKey: Self.roundsKey) }
+        set { defaults.set(newValue, forKey: Self.dailyGoalKey) }
     }
 
     var focusBorderEnabled: Bool {

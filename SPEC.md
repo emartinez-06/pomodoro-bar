@@ -10,7 +10,8 @@ The app must start at login and survive crashes without user intervention.
 
 ## 2. Pomodoro cycle
 
-A run consists of a user-selected number of rounds (1 to 8, default 4, persisted).
+The user sets a daily goal of completed sessions (1 to 12, default 10, persisted).
+Start begins a run of `max(goal - sessions completed today, 1)` work rounds, so finishing a run means reaching the daily goal.
 
 | Phase | Duration | Next |
 |---|---|---|
@@ -54,10 +55,10 @@ Phase transitions are announced by system sounds only, with no notification cent
 
 Clicking the item opens an `NSMenu` containing:
 
-1. A 240x104 `SessionsView`: "Today: N sessions", one filled red dot per completed session today (capped at 12 with a "+N" overflow), hollow dots for the pomodoros still pending in the active run, and a 7-day bar chart with weekday initials, today highlighted.
-2. A disabled status row: `Idle`, `Work, round R of N`, `Short break`, or `Long break`, prefixed with `Paused:` when paused.
+1. A 240x104 `SessionsView`: "Today: N sessions", one filled red dot per completed session today (capped at 12 with a "+N" overflow), hollow dots for the sessions still needed to reach the daily goal, and a 7-day bar chart with weekday initials, today highlighted.
+2. A disabled status row: `Idle`, `Work, session S of G today`, `Short break`, or `Long break`, prefixed with `Paused:` when paused.
 3. `Start` / `Pause` / `Resume` (one item, retitled by state, showing the Shift+Cmd+A shortcut) and `Reset` (enabled only during a run).
-4. A `Rounds` submenu (1 to 8, checkmark on the persisted choice, applied at the next Start).
+4. A `Daily Goal` submenu (1 to 12, checkmark on the persisted choice); changing it re-renders the dots immediately and sizes the next run.
 5. A `Green Focus Border` toggle (see section 4), disabled when JankyBorders is not installed.
 6. A separator and `Quit PomodoroBar` (Cmd-Q).
 
@@ -75,13 +76,16 @@ It must never appear in the Dock or the Cmd-Tab switcher.
 
 ## 4. Focus border (JankyBorders integration)
 
-During an active, unpaused work interval, the focused window is outlined in green via [JankyBorders](https://github.com/FelixKratz/JankyBorders).
-PomodoroBar owns the `borders` process outright: it spawns it (`active_color=0xffa6e3a1`, transparent inactive, width 6) when focus time starts and terminates it when focus time ends.
-Nothing runs and nothing is drawn during breaks, pauses, idle, or after quit.
+During an active, unpaused work interval, the focused window is outlined in green (`0xffa6e3a1`, width 6) via [JankyBorders](https://github.com/FelixKratz/JankyBorders).
+PomodoroBar keeps a borders server it owns running for the span of an active run, fully transparent outside work intervals, and flips `active_color` through borders client invocations that land in milliseconds.
+The server costs real memory (~170 MB observed) but nothing while idle: it is spawned at Start, drawing within about 0.1 s, and terminated at run end, reset, quit, or when the feature is toggled off.
+Nothing is drawn during breaks, pauses, or idle.
+(The one-time multi-second delay before the first ever border was macOS Gatekeeper scanning the freshly installed binary, not steady-state startup cost.)
+When (re)spawning the server, the desired color is passed directly on its command line rather than through a follow-up client call, which could race the server's mach port registration and become a second server.
 
 Rules:
 
-- Silent no-op when the `borders` binary is not installed (`/opt/homebrew/bin` or `/usr/local/bin`).
+- JankyBorders is an optional dependency installed separately (`brew install felixkratz/formulae/borders`), never bundled; everything is a silent no-op when the binary is missing (`/opt/homebrew/bin` or `/usr/local/bin`).
 - On launch the app kills any stray `borders` process, so a crash mid-session cannot leave a stale border; consequently no separately managed JankyBorders service should run alongside PomodoroBar.
 - The `Green Focus Border` menu toggle (persisted, default on) disables the integration without uninstalling anything.
 
@@ -90,7 +94,7 @@ Rules:
 `UserDefaults` (domain `com.eim.pomodoro-bar`) holds all state:
 
 - `sessionsByDay`: `[String: Int]` keyed by local-time `yyyy-MM-dd`, pruned to 30 days on every write.
-- `rounds`: selected rounds per run, clamped to 1 through 8.
+- `dailyGoal`: target completed sessions per day, clamped to 1 through 12, default 10.
 - `focusBorderEnabled`: focus border toggle, default true.
 
 There are no files, databases, or network calls.
@@ -139,9 +143,10 @@ The app runs as a per-user **LaunchAgent** (`com.eim.pomodoro-bar`), matching me
 1. `swift build -c release` completes with no warnings.
 2. `make test` prints `OK: all engine self-tests passed`.
 3. Running the binary shows the gray ring; Start turns it red with a live `MM:SS` countdown; the dropdown status row, dots, and chart match the state.
-4. During a work interval the focused window gains a green border; the border disappears on pause, break, reset, run completion, and quit.
-5. Phase transitions play Glass, Ping, and Hero at the documented moments.
-6. Shift+Cmd+A starts, pauses, and resumes the run from any application.
-7. After `make install`, `launchctl print gui/$UID/com.eim.pomodoro-bar` reports `state = running` and no Dock icon appears.
-8. `kill -9` of the running process results in relaunch by launchd within seconds, with no stale green border left behind.
-9. After logout/login, the item reappears and today's session count is preserved.
+4. During a work interval the focused window gains a green border within a second of starting; the border disappears on pause, break, reset, run completion, and quit, an invisible `borders` process runs only while a run is active, and none runs while idle.
+5. Changing the Daily Goal immediately changes the hollow dots in the dropdown.
+6. Phase transitions play Glass, Ping, and Hero at the documented moments.
+7. Shift+Cmd+A starts, pauses, and resumes the run from any application.
+8. After `make install`, `launchctl print gui/$UID/com.eim.pomodoro-bar` reports `state = running` and no Dock icon appears.
+9. `kill -9` of the running process results in relaunch by launchd within seconds, with no stale green border left behind.
+10. After logout/login, the item reappears and today's session count is preserved.
