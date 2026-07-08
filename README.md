@@ -16,6 +16,18 @@ Sessions are announced by system sounds only (Glass at break time, Ping back to 
 
 See [SPEC.md](SPEC.md) for the full behavioral and architectural specification.
 
+## Widgets
+
+**Menu bar ring and countdown** (red during work, green during breaks, dimmed when paused):
+
+![Menu bar ring](assets/menubar-ring.png)
+
+**Dropdown sessions view** (click the menu bar item):
+
+![Dropdown sessions](assets/dropdown-sessions.png)
+
+Filled dots are today's completed sessions, hollow dots are what's left in the active run, and the chart shows the last seven days with today highlighted.
+
 ## Setup
 
 ### Option 1: install from a release
