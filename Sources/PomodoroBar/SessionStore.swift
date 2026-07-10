@@ -1,8 +1,8 @@
 import Foundation
 
-/// Persists completed session counts per calendar day, plus the two user
-/// preferences, in UserDefaults. Days older than the retention window are
-/// pruned on every write.
+/// Persists completed session counts per calendar day in UserDefaults. Days
+/// older than the retention window are pruned on every write. User-facing
+/// preferences live in Preferences, not here.
 final class SessionStore {
     struct DayCount {
         let label: String
@@ -11,10 +11,7 @@ final class SessionStore {
     }
 
     private static let sessionsKey = "sessionsByDay"
-    private static let dailyGoalKey = "dailyGoal"
-    private static let focusBorderKey = "focusBorderEnabled"
     private static let retentionDays = 30
-    private static let defaultDailyGoal = 10
 
     private let defaults = UserDefaults.standard
     private let calendar = Calendar.current
@@ -24,19 +21,6 @@ final class SessionStore {
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter
     }()
-
-    var dailyGoal: Int {
-        get {
-            let stored = defaults.integer(forKey: Self.dailyGoalKey)
-            return stored == 0 ? Self.defaultDailyGoal : min(max(stored, 1), 12)
-        }
-        set { defaults.set(newValue, forKey: Self.dailyGoalKey) }
-    }
-
-    var focusBorderEnabled: Bool {
-        get { defaults.object(forKey: Self.focusBorderKey) == nil || defaults.bool(forKey: Self.focusBorderKey) }
-        set { defaults.set(newValue, forKey: Self.focusBorderKey) }
-    }
 
     func recordSession(on date: Date = Date()) {
         var counts = sessionsByDay()

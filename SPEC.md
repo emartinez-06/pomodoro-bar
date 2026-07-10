@@ -101,18 +101,15 @@ There are no files, databases, or network calls.
 
 ## 6. Process lifecycle
 
-The app runs as a per-user **LaunchAgent** (`com.eim.pomodoro-bar`), matching mempressure-bar:
-
-- `RunAtLoad = true`: starts at every login.
-- `KeepAlive = { SuccessfulExit = false }`: relaunched by launchd after a crash, but a clean quit from the menu sticks until next login.
-- stderr is captured to `~/Library/Logs/pomodoro-bar.log`.
+The app runs as an ordinary per-user process (`LSUIElement`, no Dock icon, no LaunchAgent).
+Launch at login is opt-in via the Settings toggle, backed by `ServiceManagement.SMAppService.mainApp`; there is no crash-auto-relaunch - a crash or quit just stops the app until it's opened again.
 
 ## 7. Packaging
 
-- Built with Swift Package Manager (Swift 6 toolchain, language mode 5), macOS 13+; no Xcode project, no dependencies.
-- `make install` assembles a minimal `PomodoroBar.app` bundle in `~/Applications` (binary + Info.plist), renders the LaunchAgent plist template with absolute paths, and bootstraps it via `launchctl bootstrap gui/$UID`.
+- Built with Swift Package Manager (Swift 6 toolchain, language mode 5), macOS 13+; no Xcode project, no third-party Swift dependencies.
+- `make install` assembles a minimal `PomodoroBar.app` bundle in `~/Applications` (PomodoroBar binary, the bundled `borders` binary built from `third_party/janky-borders`, Info.plist) and relaunches it.
 - The Command Line Tools toolchain ships no test framework, so the binary embeds its own engine test suite behind `--selftest`; `make test` runs it and fails the build on any regression.
-- `make dist` assembles the same minimal bundle under `dist/` and zips it; the bundle is unsigned/ad-hoc, and distribution builds are zipped app bundles attached to GitHub releases.
+- `make dist` assembles the same bundle under `dist/` and produces both a zip and a drag-to-install `.dmg`; the bundle is unsigned/ad-hoc, and distribution builds are attached to GitHub releases.
 
 ## 8. Source layout
 
@@ -128,7 +125,6 @@ The app runs as a per-user **LaunchAgent** (`com.eim.pomodoro-bar`), matching me
 | `Sources/PomodoroBar/GlobalHotKey.swift` | Carbon global hotkey registration. |
 | `Sources/PomodoroBar/EngineSelfTest.swift` | In-binary engine test suite. |
 | `Resources/Info.plist` | Bundle identity, `LSUIElement`. |
-| `Resources/com.eim.pomodoro-bar.plist` | LaunchAgent template (`__PROGRAM__`, `__LOG__` placeholders). |
 | `Makefile` | build / test / install / uninstall / restart / logs / dist. |
 
 ## 9. Non-goals
@@ -147,6 +143,6 @@ The app runs as a per-user **LaunchAgent** (`com.eim.pomodoro-bar`), matching me
 5. Changing the Daily Goal immediately changes the hollow dots in the dropdown.
 6. Phase transitions play Glass, Ping, and Hero at the documented moments.
 7. Shift+Cmd+A starts, pauses, and resumes the run from any application.
-8. After `make install`, `launchctl print gui/$UID/com.eim.pomodoro-bar` reports `state = running` and no Dock icon appears.
-9. `kill -9` of the running process results in relaunch by launchd within seconds, with no stale green border left behind.
-10. After logout/login, the item reappears and today's session count is preserved.
+8. After `make install`, the app is running and no Dock icon appears.
+9. Toggling Launch at Login in Settings registers/unregisters with `SMAppService.mainApp` (reflected in System Settings > General > Login Items).
+10. After logout/login with Launch at Login on, the item reappears and today's session count is preserved.

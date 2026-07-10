@@ -6,7 +6,7 @@ import AppKit
 /// active run; phase transitions then flip the color (or flash it) through
 /// client updates that land in milliseconds instead of paying a fresh
 /// launch. The server is terminated when enabled turns false and on quit,
-/// and everything is a silent no-op when borders is not installed.
+/// and everything is a silent no-op when borders is not available.
 final class BorderSignaler {
     /// The three steady-state looks the border can be in. Callers pick one
     /// per render(); flash() pulses through .focus or .rest before a caller
@@ -17,12 +17,26 @@ final class BorderSignaler {
         case rest
     }
 
-    private static let searchPaths = [
-        "/opt/homebrew/bin/borders",
-        "/usr/local/bin/borders",
-    ]
-    private static let focusColor = "active_color=0xffa6e3a1"
-    private static let restColor = "active_color=0xfffab387"
+    /// `make install`/`make dist` place a `borders` binary built from
+    /// third_party/janky-borders next to the PomodoroBar executable, so the
+    /// app always has a known, bundled copy and never depends on the user
+    /// separately installing JankyBorders. The Homebrew paths remain as a
+    /// fallback for `swift run`/`swift build` dev flows that skip the
+    /// Makefile and so never produce that bundled binary.
+    private static var searchPaths: [String] {
+        var paths: [String] = []
+        if let bundled = Bundle.main.executableURL?
+            .deletingLastPathComponent()
+            .appendingPathComponent("borders")
+            .path {
+            paths.append(bundled)
+        }
+        paths.append(contentsOf: [
+            "/opt/homebrew/bin/borders",
+            "/usr/local/bin/borders",
+        ])
+        return paths
+    }
     private static let clearColor = "active_color=0x00000000"
     private static let baseStyle = [
         "inactive_color=0x00000000",
@@ -32,6 +46,7 @@ final class BorderSignaler {
     private static let flashPulseCount = 3
     private static let flashPulseInterval: TimeInterval = 0.15
 
+    private let preferences: Preferences
     private let binaryPath: String?
     private var server: Process?
     private var appliedColor: String?
@@ -39,7 +54,8 @@ final class BorderSignaler {
 
     var isAvailable: Bool { binaryPath != nil }
 
-    init() {
+    init(preferences: Preferences) {
+        self.preferences = preferences
         binaryPath = Self.searchPaths.first { FileManager.default.isExecutableFile(atPath: $0) }
         // If a previous PomodoroBar crashed, its borders child was orphaned and
         // would draw forever; reap it here. PomodoroBar owns the borders
@@ -62,7 +78,7 @@ final class BorderSignaler {
         // rather than racing it with a steady-state color.
         guard flashTimer == nil else { return }
 
-        let color = Self.color(for: colorState)
+        let color = color(for: colorState)
         if let server, server.isRunning {
             guard color != appliedColor else { return }
             runClient(arguments: [color])
@@ -84,7 +100,7 @@ final class BorderSignaler {
         guard isAvailable, let server, server.isRunning else { return }
         flashTimer?.invalidate()
 
-        let color = Self.color(for: colorState)
+        let color = color(for: colorState)
         var step = 0
         let totalSteps = Self.flashPulseCount * 2
         let timer = Timer(timeInterval: Self.flashPulseInterval, repeats: true) { [weak self] timer in
@@ -114,11 +130,11 @@ final class BorderSignaler {
         appliedColor = nil
     }
 
-    private static func color(for state: ColorState) -> String {
+    private func color(for state: ColorState) -> String {
         switch state {
-        case .clear: return clearColor
-        case .focus: return focusColor
-        case .rest: return restColor
+        case .clear: return Self.clearColor
+        case .focus: return "active_color=\(preferences.focusColorHex)"
+        case .rest: return "active_color=\(preferences.restColorHex)"
         }
     }
 

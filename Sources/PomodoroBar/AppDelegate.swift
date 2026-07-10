@@ -4,7 +4,9 @@ import Carbon.HIToolbox
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var engine = PomodoroEngine()
     private let store = SessionStore()
-    private let border = BorderSignaler()
+    private let preferences = Preferences()
+    private var border: BorderSignaler!
+    private var settingsWindowController: SettingsWindowController!
 
     private var statusItem: NSStatusItem!
     private var timer: Timer?
@@ -19,6 +21,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let focusBorderItem = NSMenuItem()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        border = BorderSignaler(preferences: preferences)
+        settingsWindowController = SettingsWindowController(preferences: preferences, borderAvailable: border.isAvailable)
+
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
             button.imagePosition = .imageLeft
@@ -89,9 +94,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         focusBorderItem.action = #selector(toggleFocusBorder)
         focusBorderItem.isEnabled = border.isAvailable
         focusBorderItem.toolTip = border.isAvailable
-            ? "Outline the focused window with JankyBorders: green during work, warm during rest"
-            : "Install JankyBorders (brew install felixkratz/formulae/borders) to enable"
+            ? "Outline the focused window with JankyBorders: work color during work, rest color during breaks"
+            : "Bundled JankyBorders binary not found"
         menu.addItem(focusBorderItem)
+
+        menu.addItem(.separator())
+        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
 
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(
@@ -108,9 +118,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func startPause() {
         switch engine.phase {
         case .idle:
-            // A run covers exactly the sessions still needed to reach the
-            // daily goal, so completing a run means completing the day.
-            engine.start(rounds: max(store.dailyGoal - store.todayCount(), 1))
+            // A fresh engine picks up any duration changes made in Settings
+            // since the last run; a run covers exactly the sessions still
+            // needed to reach the daily goal, so completing a run means
+            // completing the day.
+            engine = PomodoroEngine(config: preferences.engineConfig)
+            engine.start(rounds: max(preferences.dailyGoal - store.todayCount(), 1))
             startTimer()
             play("Pop")
         default:
@@ -140,13 +153,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func selectDailyGoal(_ sender: NSMenuItem) {
-        store.dailyGoal = sender.tag
+        preferences.dailyGoal = sender.tag
         render()
     }
 
     @objc private func toggleFocusBorder() {
-        store.focusBorderEnabled.toggle()
+        preferences.focusBorderEnabled.toggle()
         render()
+    }
+
+    @objc private func openSettings() {
+        settingsWindowController.show()
     }
 
     // MARK: - Timer
@@ -189,6 +206,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func play(_ name: String) {
+        guard preferences.soundsEnabled else { return }
         currentSound?.stop()
         currentSound = NSSound(named: name)
         currentSound?.play()
@@ -221,15 +239,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         resetItem.isEnabled = engine.phase != .idle
         if let submenu = dailyGoalItem.submenu {
             for item in submenu.items {
-                item.state = item.tag == store.dailyGoal ? .on : .off
+                item.state = item.tag == preferences.dailyGoal ? .on : .off
             }
         }
-        focusBorderItem.state = store.focusBorderEnabled && border.isAvailable ? .on : .off
+        focusBorderItem.state = preferences.focusBorderEnabled && border.isAvailable ? .on : .off
 
         let todayCount = store.todayCount()
         sessionsView.update(
             todayCount: todayCount,
-            pendingToGoal: max(store.dailyGoal - todayCount, 0),
+            pendingToGoal: max(preferences.dailyGoal - todayCount, 0),
             history: store.lastSevenDays()
         )
 
@@ -249,7 +267,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // The warm server is scoped to active runs: zero resource cost while
         // idle, instant color flips for every transition within a run.
         border.apply(
-            enabled: store.focusBorderEnabled && engine.phase != .idle,
+            enabled: preferences.focusBorderEnabled && engine.phase != .idle,
             colorState: colorState
         )
     }
@@ -275,7 +293,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .idle:
             base = "Idle"
         case .work:
-            base = "Work, session \(store.todayCount() + 1) of \(store.dailyGoal) today"
+            base = "Work, session \(store.todayCount() + 1) of \(preferences.dailyGoal) today"
         case .shortBreak:
             base = "Short break"
         case .longBreak:
