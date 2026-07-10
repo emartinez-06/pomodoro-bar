@@ -31,6 +31,11 @@ struct PomodoroEngine {
     private(set) var phase: Phase = .idle
     private(set) var remaining = 0
     private(set) var totalRounds = 4
+    /// Set by tick() when an interval finishes and a cycle (work<->break)
+    /// would come next; cleared by advance(). The engine holds here rather
+    /// than auto-continuing, so the next phase only starts on an explicit
+    /// user action (the Shift+Cmd+A keybind).
+    private(set) var pendingTransition: Transition?
     var isPaused = false
 
     init(config: Config = Config()) {
@@ -74,20 +79,28 @@ struct PomodoroEngine {
         phase = .work(round: 1)
         remaining = config.workDuration
         isPaused = false
+        pendingTransition = nil
     }
 
     mutating func reset() {
         phase = .idle
         remaining = 0
         isPaused = false
+        pendingTransition = nil
     }
 
-    /// Advances the countdown by one second and performs at most one
-    /// phase transition, returned so the caller can react to it.
+    /// Advances the countdown by one second. When an interval finishes, the
+    /// run either ends (work -> idle, applied immediately, nothing to start
+    /// next) or a cycle boundary is reached (work <-> break): the engine
+    /// pauses there and records the pending transition rather than
+    /// continuing on its own. Call advance() to actually move into the next
+    /// phase. Either way the transition is returned so the caller can react
+    /// (sound, session count, border flash).
     mutating func tick() -> Transition? {
-        guard phase != .idle, !isPaused else { return nil }
+        guard phase != .idle, !isPaused, pendingTransition == nil else { return nil }
         remaining -= 1
         guard remaining <= 0 else { return nil }
+        remaining = 0
 
         switch phase {
         case .idle:
@@ -95,21 +108,38 @@ struct PomodoroEngine {
         case .work(let round):
             if round >= totalRounds {
                 phase = .idle
-                remaining = 0
                 return .workToIdle
             }
-            if round % config.longBreakEvery == 0 {
-                phase = .longBreak(after: round)
-                remaining = config.longBreakDuration
-                return .workToLongBreak
-            }
+            let transition: Transition = round % config.longBreakEvery == 0 ? .workToLongBreak : .workToShortBreak
+            pendingTransition = transition
+            isPaused = true
+            return transition
+        case .shortBreak, .longBreak:
+            pendingTransition = .breakToWork
+            isPaused = true
+            return .breakToWork
+        }
+    }
+
+    /// Moves into the phase held by pendingTransition, resuming the
+    /// countdown. A no-op if nothing is pending.
+    mutating func advance() {
+        guard let transition = pendingTransition else { return }
+        pendingTransition = nil
+        isPaused = false
+
+        switch (transition, phase) {
+        case (.workToShortBreak, .work(let round)):
             phase = .shortBreak(after: round)
             remaining = config.shortBreakDuration
-            return .workToShortBreak
-        case .shortBreak(let after), .longBreak(let after):
+        case (.workToLongBreak, .work(let round)):
+            phase = .longBreak(after: round)
+            remaining = config.longBreakDuration
+        case (.breakToWork, .shortBreak(let after)), (.breakToWork, .longBreak(let after)):
             phase = .work(round: after + 1)
             remaining = config.workDuration
-            return .breakToWork
+        default:
+            break
         }
     }
 }

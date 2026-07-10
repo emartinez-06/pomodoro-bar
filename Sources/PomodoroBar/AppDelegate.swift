@@ -84,12 +84,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         dailyGoalItem.submenu = goalMenu
         menu.addItem(dailyGoalItem)
 
-        focusBorderItem.title = "Green Focus Border"
+        focusBorderItem.title = "Focus Border"
         focusBorderItem.target = self
         focusBorderItem.action = #selector(toggleFocusBorder)
         focusBorderItem.isEnabled = border.isAvailable
         focusBorderItem.toolTip = border.isAvailable
-            ? "Outline the focused window with JankyBorders during work intervals"
+            ? "Outline the focused window with JankyBorders: green during work, warm during rest"
             : "Install JankyBorders (brew install felixkratz/formulae/borders) to enable"
         menu.addItem(focusBorderItem)
 
@@ -112,13 +112,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // daily goal, so completing a run means completing the day.
             engine.start(rounds: max(store.dailyGoal - store.todayCount(), 1))
             startTimer()
+            play("Pop")
         default:
-            if engine.isPaused {
+            if engine.pendingTransition != nil {
+                // A work or rest interval just ended; this is the manual
+                // advance into whatever comes next (cycles never auto-start).
+                engine.advance()
+                startTimer()
+                play("Pop")
+            } else if engine.isPaused {
                 engine.isPaused = false
                 startTimer()
+                play("Pop")
             } else {
                 engine.isPaused = true
                 stopTimer()
+                play("Bottle")
             }
         }
         render()
@@ -162,12 +171,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .workToShortBreak, .workToLongBreak:
             store.recordSession()
             play("Glass")
+            stopTimer()
+            border.flash(.focus)
         case .workToIdle:
             store.recordSession()
             play("Hero")
             stopTimer()
+            border.flash(.focus)
         case .breakToWork:
             play("Ping")
+            stopTimer()
+            border.flash(.rest)
         case nil:
             break
         }
@@ -198,7 +212,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .idle:
             startPauseItem.title = "Start"
         default:
-            startPauseItem.title = engine.isPaused ? "Resume" : "Pause"
+            if engine.pendingTransition != nil {
+                startPauseItem.title = "Continue"
+            } else {
+                startPauseItem.title = engine.isPaused ? "Resume" : "Pause"
+            }
         }
         resetItem.isEnabled = engine.phase != .idle
         if let submenu = dailyGoalItem.submenu {
@@ -219,17 +237,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func updateBorder() {
-        let inFocusedWork: Bool
-        if case .work = engine.phase, !engine.isPaused {
-            inFocusedWork = true
-        } else {
-            inFocusedWork = false
+        let colorState: BorderSignaler.ColorState
+        switch engine.phase {
+        case .work where !engine.isPaused:
+            colorState = .focus
+        case .shortBreak where !engine.isPaused, .longBreak where !engine.isPaused:
+            colorState = .rest
+        default:
+            colorState = .clear
         }
         // The warm server is scoped to active runs: zero resource cost while
         // idle, instant color flips for every transition within a run.
         border.apply(
             enabled: store.focusBorderEnabled && engine.phase != .idle,
-            focused: inFocusedWork
+            colorState: colorState
         )
     }
 
@@ -260,6 +281,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .longBreak:
             base = "Long break"
         }
+        if let pending = engine.pendingTransition {
+            return "\(base) done, \(pendingLabel(pending)) - Shift+Cmd+A to continue"
+        }
         return engine.phase != .idle && engine.isPaused ? "Paused: \(base)" : base
+    }
+
+    private func pendingLabel(_ transition: PomodoroEngine.Transition) -> String {
+        switch transition {
+        case .workToShortBreak:
+            return "short break ready"
+        case .workToLongBreak:
+            return "long break ready"
+        case .breakToWork:
+            return "next round ready"
+        case .workToIdle:
+            return "run complete"
+        }
     }
 }

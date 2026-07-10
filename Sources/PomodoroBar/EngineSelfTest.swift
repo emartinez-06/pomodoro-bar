@@ -19,6 +19,8 @@ enum EngineSelfTest {
         resetReturnsToIdle()
         progressAdvances()
         pendingRoundsDuringBreak()
+        tickHoldsAtBoundaryUntilAdvance()
+        advanceIsNoOpWithoutPendingTransition()
 
         if failures > 0 {
             print("FAILED: \(failures) assertion(s)")
@@ -47,9 +49,14 @@ enum EngineSelfTest {
     }
 
     /// Ticks until the current phase finishes and returns its transition.
+    /// Mirrors the real app: a work<->break boundary holds in
+    /// pendingTransition until advance() is called (standing in for the
+    /// user's Shift+Cmd+A keypress), so this drives that too, leaving the
+    /// engine already moved into the next phase for the caller to inspect.
     private static func finishPhase(_ engine: inout PomodoroEngine) -> PomodoroEngine.Transition? {
         for _ in 0..<(engine.remaining + 1) {
             if let transition = engine.tick() {
+                engine.advance()
                 return transition
             }
         }
@@ -153,5 +160,28 @@ enum EngineSelfTest {
         var engine = startedEngine(rounds: 4)
         _ = finishPhase(&engine)
         expect(engine.pendingRounds == 3, "three rounds pending during first break")
+    }
+
+    private static func tickHoldsAtBoundaryUntilAdvance() {
+        var engine = startedEngine(rounds: 4)
+        for _ in 0..<(engine.remaining + 1) {
+            if engine.tick() != nil { break }
+        }
+        expect(engine.phase == .work(round: 1), "phase holds at work until advance")
+        expect(engine.pendingTransition == .workToShortBreak, "pending transition recorded")
+        expect(engine.isPaused, "engine pauses awaiting advance")
+        expect(engine.tick() == nil, "tick is a no-op while a transition is pending")
+
+        engine.advance()
+        expect(engine.phase == .shortBreak(after: 1), "advance moves into the pending phase")
+        expect(!engine.isPaused, "advance resumes the countdown")
+        expect(engine.pendingTransition == nil, "advance clears the pending transition")
+    }
+
+    private static func advanceIsNoOpWithoutPendingTransition() {
+        var engine = startedEngine(rounds: 4)
+        engine.advance()
+        expect(engine.phase == .work(round: 1), "advance without a pending transition changes nothing")
+        expect(engine.remaining == 25 * 60, "remaining is untouched")
     }
 }
