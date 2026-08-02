@@ -12,9 +12,17 @@ final class SettingsWindowController: NSWindowController {
             defer: false
         )
         window.title = "PomodoroBar Settings"
-        window.contentView = NSHostingView(
+        let content = NSHostingView(
             rootView: SettingsView(preferences: preferences, borderAvailable: borderAvailable)
         )
+        window.contentView = content
+        // The form is fixed-width and sizes itself vertically, and the window
+        // is not resizable, so take the height from the view rather than a
+        // hardcoded rect that every added row silently clips further. Capped
+        // at the screen so a tall form can never run off the bottom.
+        let fitted = content.fittingSize
+        let maxHeight = (window.screen ?? NSScreen.main)?.visibleFrame.height ?? fitted.height
+        window.setContentSize(NSSize(width: fitted.width, height: min(fitted.height, maxHeight - 40)))
         window.center()
         window.isReleasedWhenClosed = false
         self.init(window: window)

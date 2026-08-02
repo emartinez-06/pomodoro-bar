@@ -22,6 +22,8 @@ struct SettingsView: View {
             }
 
             Section("Timer") {
+                Toggle("Auto-Advance Cycles", isOn: $preferences.autoAdvanceEnabled)
+                    .help("Start the next work or break interval automatically when the current one ends, so a run needs a single Start and stops itself at the daily goal. Off: every interval waits for Shift+Cmd+A.")
                 Stepper("Work: \(preferences.workMinutes) min", value: $preferences.workMinutes, in: 1...120)
                 Stepper("Break: \(preferences.breakMinutes) min", value: $preferences.breakMinutes, in: 1...60)
                 Stepper("Long break: \(preferences.longBreakMinutes) min", value: $preferences.longBreakMinutes, in: 1...60)

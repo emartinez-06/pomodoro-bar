@@ -34,9 +34,16 @@ struct PomodoroEngine {
     /// Set by tick() when an interval finishes and a cycle (work<->break)
     /// would come next; cleared by advance(). The engine holds here rather
     /// than auto-continuing, so the next phase only starts on an explicit
-    /// user action (the Shift+Cmd+A keybind).
+    /// user action (the Shift+Cmd+A keybind). Never observable while
+    /// autoAdvance is on, since tick() clears it in the same call.
     private(set) var pendingTransition: Transition?
     var isPaused = false
+    /// When true, tick() moves straight into the next phase at a cycle
+    /// boundary instead of holding for advance(), so a whole run needs a
+    /// single Start and stops on its own at the end. Read live from
+    /// preferences by the caller, so toggling it mid-run takes effect at the
+    /// very next boundary.
+    var autoAdvance = false
 
     init(config: Config = Config()) {
         self.config = config
@@ -91,10 +98,8 @@ struct PomodoroEngine {
 
     /// Advances the countdown by one second. When an interval finishes, the
     /// run either ends (work -> idle, applied immediately, nothing to start
-    /// next) or a cycle boundary is reached (work <-> break): the engine
-    /// pauses there and records the pending transition rather than
-    /// continuing on its own. Call advance() to actually move into the next
-    /// phase. Either way the transition is returned so the caller can react
+    /// next) or a cycle boundary is reached (work <-> break), handled by
+    /// hold(). Either way the transition is returned so the caller can react
     /// (sound, session count, border flash).
     mutating func tick() -> Transition? {
         guard phase != .idle, !isPaused, pendingTransition == nil else { return nil }
@@ -110,15 +115,23 @@ struct PomodoroEngine {
                 phase = .idle
                 return .workToIdle
             }
-            let transition: Transition = round % config.longBreakEvery == 0 ? .workToLongBreak : .workToShortBreak
-            pendingTransition = transition
-            isPaused = true
-            return transition
+            return hold(round % config.longBreakEvery == 0 ? .workToLongBreak : .workToShortBreak)
         case .shortBreak, .longBreak:
-            pendingTransition = .breakToWork
-            isPaused = true
-            return .breakToWork
+            return hold(.breakToWork)
         }
+    }
+
+    /// Records the cycle boundary the run just reached. By default the engine
+    /// pauses there rather than continuing on its own, and the next phase
+    /// only starts when the caller calls advance(); with autoAdvance on it
+    /// moves into that phase right away.
+    private mutating func hold(_ transition: Transition) -> Transition {
+        pendingTransition = transition
+        isPaused = true
+        if autoAdvance {
+            advance()
+        }
+        return transition
     }
 
     /// Moves into the phase held by pendingTransition, resuming the

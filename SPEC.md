@@ -13,7 +13,7 @@ The app must start at login and survive crashes without user intervention.
 The user sets a daily goal of completed sessions (1 to 12, default 10, persisted).
 Start begins a run of `max(goal - sessions completed today, 1)` work rounds, so finishing a run means reaching the daily goal.
 
-| Phase | Duration | Next |
+| Phase | Default duration | Next |
 |---|---|---|
 | Work | 25 min | Break, or idle after the final round |
 | Short break | 5 min | Next work round |
@@ -22,6 +22,20 @@ Start begins a run of `max(goal - sessions completed today, 1)` work rounds, so 
 Every 4th completed work round is followed by the long break instead of the short one.
 The final work round of a run always ends the run, even when it falls on a multiple of 4.
 A completed session is recorded when a work round finishes, never for partial work.
+
+### Auto-advance
+
+With `autoAdvanceEnabled` on (the default) the run never waits at a boundary: when an interval ends the engine moves straight into the next one.
+A whole day therefore costs one Start at the beginning and nothing after that, since the run also stops itself when its final work round finishes.
+With the setting off, every work <-> break boundary parks the run: the engine records the pending transition, pauses, and the next interval begins only on Continue (Shift+Cmd+A).
+The setting is read from preferences on every tick, so toggling it mid-run takes effect at the very next boundary rather than the next run.
+
+### Daily reset
+
+The timer resets at every local midnight: any run still going is stopped, the engine returns to idle, and the border is torn down, so a new day always starts from zero against the new day's session count.
+A one-shot timer aimed one second past the next midnight drives this, re-armed after each check.
+`NSCalendarDayChanged` and `NSSystemClockDidChange` are observed as backstops, since the former can lag for a background accessory app and the latter signals clock or timezone changes that invalidate an already-scheduled fire date.
+A timer that came due while the machine slept fires as soon as the run loop wakes, its fire date being absolute.
 
 ### Timekeeping
 
@@ -57,7 +71,7 @@ Clicking the item opens an `NSMenu` containing:
 
 1. A 240x104 `SessionsView`: "Today: N sessions", one filled red dot per completed session today (capped at 12 with a "+N" overflow), hollow dots for the sessions still needed to reach the daily goal, and a 7-day bar chart with weekday initials, today highlighted.
 2. A disabled status row: `Idle`, `Work, session S of G today`, `Short break`, or `Long break`, prefixed with `Paused:` when paused.
-3. `Start` / `Pause` / `Resume` (one item, retitled by state, showing the Shift+Cmd+A shortcut) and `Reset` (enabled only during a run).
+3. `Start` / `Pause` / `Resume` / `Continue` (one item, retitled by state, showing the Shift+Cmd+A shortcut) and `Reset` (enabled only during a run). `Continue` appears only at a parked boundary, which auto-advance never produces.
 4. A `Daily Goal` submenu (1 to 12, checkmark on the persisted choice); changing it re-renders the dots immediately and sizes the next run.
 5. A `Green Focus Border` toggle (see section 4), disabled when JankyBorders is not installed.
 6. A separator and `Quit PomodoroBar` (Cmd-Q).
@@ -95,7 +109,15 @@ Rules:
 
 - `sessionsByDay`: `[String: Int]` keyed by local-time `yyyy-MM-dd`, pruned to 30 days on every write.
 - `dailyGoal`: target completed sessions per day, clamped to 1 through 12, default 10.
+- `workMinutes` / `breakMinutes` / `longBreakMinutes`: interval lengths, defaults 25 / 5 / 15, clamped to 1 through 120 / 60 / 60.
+- `roundsBeforeLongBreak`: clamped to 2 through 12, default 4.
+- `autoAdvanceEnabled`: auto-advance toggle, default true.
+- `soundsEnabled`: transition sounds toggle, default true.
 - `focusBorderEnabled`: focus border toggle, default true.
+- `focusColorHex` / `restColorHex`: border colors as `0xAARRGGBB`.
+
+Session counts live in `SessionStore`; everything else in `Preferences`.
+Durations are read fresh at each Start, so a change in Settings applies to the next run rather than the one in flight.
 
 There are no files, databases, or network calls.
 
@@ -118,18 +140,22 @@ Launch at login is opt-in via the Settings toggle, backed by `ServiceManagement.
 | `Sources/PomodoroBar/main.swift` | NSApplication bootstrap, accessory activation policy, `--selftest` dispatch. |
 | `Sources/PomodoroBar/AppDelegate.swift` | Status item, menu wiring, timer, sounds, render loop. |
 | `Sources/PomodoroBar/PomodoroEngine.swift` | Pure Pomodoro state machine: phases, rounds, transitions. |
-| `Sources/PomodoroBar/SessionStore.swift` | UserDefaults persistence: daily counts, preferences. |
+| `Sources/PomodoroBar/SessionStore.swift` | UserDefaults persistence: daily session counts. |
+| `Sources/PomodoroBar/Preferences.swift` | UserDefaults-backed user settings, observable by the settings view. |
+| `Sources/PomodoroBar/DayRolloverMonitor.swift` | Midnight watch that triggers the daily reset. |
 | `Sources/PomodoroBar/StatusRingRenderer.swift` | Menu bar ring image rendering. |
 | `Sources/PomodoroBar/SessionsView.swift` | Dropdown dots and 7-day chart view. |
 | `Sources/PomodoroBar/BorderSignaler.swift` | JankyBorders child-process lifecycle. |
 | `Sources/PomodoroBar/GlobalHotKey.swift` | Carbon global hotkey registration. |
-| `Sources/PomodoroBar/EngineSelfTest.swift` | In-binary engine test suite. |
+| `Sources/PomodoroBar/SettingsView.swift` | SwiftUI settings form. |
+| `Sources/PomodoroBar/SettingsWindowController.swift` | Settings window hosting and focus. |
+| `Sources/PomodoroBar/EngineSelfTest.swift` | In-binary test suite for the engine and the day-rollover monitor. |
 | `Resources/Info.plist` | Bundle identity, `LSUIElement`. |
 | `Makefile` | build / test / install / uninstall / restart / logs / dist. |
 
 ## 9. Non-goals
 
-- No configurable durations; 25/5/15 are compile-time constants in `PomodoroEngine.Config`.
+- No per-run overrides; durations, goal, and auto-advance are global settings, not something asked per Start.
 - No notification center usage, idle detection, or calendar integration.
 - No network access of any kind.
 - No task lists, tags, or statistics beyond the daily session counts.
@@ -143,6 +169,9 @@ Launch at login is opt-in via the Settings toggle, backed by `ServiceManagement.
 5. Changing the Daily Goal immediately changes the hollow dots in the dropdown.
 6. Phase transitions play Glass, Ping, and Hero at the documented moments.
 7. Shift+Cmd+A starts, pauses, and resumes the run from any application.
-8. After `make install`, the app is running and no Dock icon appears.
-9. Toggling Launch at Login in Settings registers/unregisters with `SMAppService.mainApp` (reflected in System Settings > General > Login Items).
-10. After logout/login with Launch at Login on, the item reappears and today's session count is preserved.
+8. With auto-advance on, a run started once walks work -> break -> work unattended, plays each transition sound, keeps the countdown moving across every boundary, and goes idle by itself after the run's final work round.
+9. With auto-advance off, each boundary parks the run with the item titled `Continue`, and no interval starts until Shift+Cmd+A.
+10. At midnight an active run stops, the ring clears, the `borders` process exits, and the dropdown shows the new day at zero sessions.
+11. After `make install`, the app is running and no Dock icon appears.
+12. Toggling Launch at Login in Settings registers/unregisters with `SMAppService.mainApp` (reflected in System Settings > General > Login Items).
+13. After logout/login with Launch at Login on, the item reappears and today's session count is preserved.

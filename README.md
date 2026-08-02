@@ -9,6 +9,10 @@ Work 25 minutes, break 5, long break 15 after every 4th round, toward a daily go
 A drawn progress ring and `MM:SS` countdown live in the menu bar; clicking it shows today's completed sessions as dots plus a 7-day history chart.
 Shift+Cmd+A starts, pauses, and resumes the run from anywhere, no accessibility permissions required.
 
+One Start covers the whole day: intervals roll from work to break to work on their own and the run stops itself once the daily goal is met, so the only button you touch is the first one.
+Turn **Auto-Advance Cycles** off in Settings if you'd rather confirm each interval with Shift+Cmd+A.
+Every local midnight the timer resets - any run still going is stopped and the new day starts from zero.
+
 While a work interval is running, the focused window is outlined in green via a bundled copy of [JankyBorders](https://github.com/FelixKratz/JankyBorders), a visual "locked in" cue that pairs well with AeroSpace-style window gaps.
 PomodoroBar builds JankyBorders from a pinned source release and ships the resulting binary inside `PomodoroBar.app`, so there is no separate install step and no dependency on whatever version happens to be on your system.
 It runs a borders process of its own only while a run is active, so the border appears the instant work starts, vanishes instantly for breaks and pauses, and costs nothing while idle.
@@ -30,7 +34,7 @@ See [SPEC.md](SPEC.md) for the full behavioral and architectural specification.
 
 Filled dots are today's completed sessions, hollow dots are what's left of the daily goal, and the chart shows the last seven days with today highlighted.
 
-**Settings** (menu bar dropdown > Settings…): launch at login, mute sounds, work/break/long-break durations, rounds before a long break, daily goal, and the focus border's on/off state and colors.
+**Settings** (menu bar dropdown > Settings…): launch at login, mute sounds, work/break/long-break durations, rounds before a long break, daily goal, auto-advance, and the focus border's on/off state and colors.
 
 ## Setup
 

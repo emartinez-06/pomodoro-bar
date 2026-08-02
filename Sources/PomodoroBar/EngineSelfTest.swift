@@ -1,6 +1,7 @@
 import Foundation
 
-/// In-binary test suite for the engine state machine, run via `PomodoroBar --selftest`.
+/// In-binary test suite for the pure timing logic - the engine state machine
+/// and the day-rollover monitor - run via `PomodoroBar --selftest`.
 /// The Command Line Tools toolchain ships no test framework, so the binary
 /// carries its own checks; `make test` runs them and fails on any regression.
 enum EngineSelfTest {
@@ -21,6 +22,11 @@ enum EngineSelfTest {
         pendingRoundsDuringBreak()
         tickHoldsAtBoundaryUntilAdvance()
         advanceIsNoOpWithoutPendingTransition()
+        autoAdvanceCrossesBoundaryWithoutHolding()
+        autoAdvanceRunsAWholeDayFromOneStart()
+        autoAdvanceStillEndsRunAtFinalRound()
+        rolloverFiresOnceWhenTheDayChanges()
+        rolloverIgnoresTimeChangesWithinTheSameDay()
 
         if failures > 0 {
             print("FAILED: \(failures) assertion(s)")
@@ -49,14 +55,22 @@ enum EngineSelfTest {
     }
 
     /// Ticks until the current phase finishes and returns its transition.
-    /// Mirrors the real app: a work<->break boundary holds in
-    /// pendingTransition until advance() is called (standing in for the
-    /// user's Shift+Cmd+A keypress), so this drives that too, leaving the
+    /// Mirrors the real app with auto-advance off: a work<->break boundary
+    /// holds in pendingTransition until advance() is called (standing in for
+    /// the user's Shift+Cmd+A keypress), so this drives that too, leaving the
     /// engine already moved into the next phase for the caller to inspect.
     private static func finishPhase(_ engine: inout PomodoroEngine) -> PomodoroEngine.Transition? {
+        guard let transition = tickToBoundary(&engine) else { return nil }
+        engine.advance()
+        return transition
+    }
+
+    /// Ticks until the current phase finishes, leaving the engine exactly
+    /// where tick() put it - held at the boundary, or already in the next
+    /// phase when autoAdvance is on.
+    private static func tickToBoundary(_ engine: inout PomodoroEngine) -> PomodoroEngine.Transition? {
         for _ in 0..<(engine.remaining + 1) {
             if let transition = engine.tick() {
-                engine.advance()
                 return transition
             }
         }
@@ -164,9 +178,7 @@ enum EngineSelfTest {
 
     private static func tickHoldsAtBoundaryUntilAdvance() {
         var engine = startedEngine(rounds: 4)
-        for _ in 0..<(engine.remaining + 1) {
-            if engine.tick() != nil { break }
-        }
+        _ = tickToBoundary(&engine)
         expect(engine.phase == .work(round: 1), "phase holds at work until advance")
         expect(engine.pendingTransition == .workToShortBreak, "pending transition recorded")
         expect(engine.isPaused, "engine pauses awaiting advance")
@@ -183,5 +195,73 @@ enum EngineSelfTest {
         engine.advance()
         expect(engine.phase == .work(round: 1), "advance without a pending transition changes nothing")
         expect(engine.remaining == 25 * 60, "remaining is untouched")
+    }
+
+    private static func autoAdvanceCrossesBoundaryWithoutHolding() {
+        var engine = startedEngine(rounds: 4)
+        engine.autoAdvance = true
+        expect(tickToBoundary(&engine) == .workToShortBreak, "boundary still reports its transition")
+        expect(engine.phase == .shortBreak(after: 1), "auto-advance moves straight into the break")
+        expect(engine.remaining == 5 * 60, "next phase starts at full length")
+        expect(engine.pendingTransition == nil, "nothing is left pending")
+        expect(!engine.isPaused, "countdown keeps running")
+        expect(engine.tick() == nil, "the next tick counts the break down")
+        expect(engine.remaining == 5 * 60 - 1, "break lost a second")
+    }
+
+    /// The point of the feature: one Start at the top of the day, one stop at
+    /// the end, no keypress at any boundary in between.
+    private static func autoAdvanceRunsAWholeDayFromOneStart() {
+        var engine = startedEngine(rounds: 3)
+        engine.autoAdvance = true
+        let expected: [PomodoroEngine.Transition] = [
+            .workToShortBreak, .breakToWork, .workToShortBreak, .breakToWork, .workToIdle,
+        ]
+        for transition in expected {
+            expect(tickToBoundary(&engine) == transition, "run reaches \(transition) unattended")
+        }
+        expect(engine.phase == .idle, "run stops itself once the goal is met")
+    }
+
+    private static func autoAdvanceStillEndsRunAtFinalRound() {
+        var engine = startedEngine(rounds: 1)
+        engine.autoAdvance = true
+        expect(tickToBoundary(&engine) == .workToIdle, "final round ends the run rather than continuing")
+        expect(engine.phase == .idle, "engine idle after the last round")
+        expect(engine.tick() == nil, "idle engine does not restart itself")
+    }
+
+    // MARK: - Day rollover
+
+    private static func rolloverFiresOnceWhenTheDayChanges() {
+        var now = date("2026-08-02 23:59:30")
+        var rollovers = 0
+        let monitor = DayRolloverMonitor(now: { now }) { rollovers += 1 }
+
+        expect(!monitor.checkForRollover(), "no rollover before midnight")
+        now = date("2026-08-03 00:00:01")
+        expect(monitor.checkForRollover(), "rollover once the day changes")
+        expect(rollovers == 1, "callback fired exactly once")
+        expect(!monitor.checkForRollover(), "the same new day does not fire again")
+        expect(rollovers == 1, "callback still fired exactly once")
+    }
+
+    private static func rolloverIgnoresTimeChangesWithinTheSameDay() {
+        var now = date("2026-08-02 08:00:00")
+        var rollovers = 0
+        let monitor = DayRolloverMonitor(now: { now }) { rollovers += 1 }
+
+        now = date("2026-08-02 23:59:59")
+        expect(!monitor.checkForRollover(), "a jump within the day is not a rollover")
+        expect(rollovers == 0, "callback never fired")
+    }
+
+    private static func date(_ string: String) -> Date {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        guard let date = formatter.date(from: string) else {
+            fatalError("EngineSelfTest: unparseable date \(string)")
+        }
+        return date
     }
 }

@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var timer: Timer?
     private var currentSound: NSSound?
     private var hotKey: GlobalHotKey?
+    private var dayRollover: DayRolloverMonitor?
 
     private let sessionsView = SessionsView(frame: NSRect(x: 0, y: 0, width: 240, height: 104))
     private let statusInfoItem = NSMenuItem()
@@ -35,6 +36,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         if hotKey == nil {
             NSLog("GlobalHotKey: Shift+Cmd+A registration failed; running without a hotkey")
+        }
+        // Every day starts from a clean slate: midnight ends whatever run was
+        // still going, so the next Start is sized against the new day's zero
+        // count instead of carrying yesterday's run (and its border) forward.
+        dayRollover = DayRolloverMonitor { [weak self] in
+            self?.resetRun()
         }
         render()
     }
@@ -184,23 +191,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func tick() {
+        // Read live, so flipping the setting mid-run applies at the very next
+        // boundary instead of only on the next run.
+        engine.autoAdvance = preferences.autoAdvanceEnabled
+
         switch engine.tick() {
         case .workToShortBreak, .workToLongBreak:
             store.recordSession()
             play("Glass")
-            stopTimer()
             border.flash(.focus)
         case .workToIdle:
             store.recordSession()
             play("Hero")
-            stopTimer()
             border.flash(.focus)
         case .breakToWork:
             play("Ping")
-            stopTimer()
             border.flash(.rest)
         case nil:
             break
+        }
+        // The run stops itself at the end of the day's last work round, and at
+        // every cycle boundary too when auto-advance is off (the engine parks
+        // there waiting for Continue). Auto-advancing straight into the next
+        // phase leaves the countdown running, so the ticker stays.
+        if engine.phase == .idle || engine.isPaused {
+            stopTimer()
         }
         render()
     }

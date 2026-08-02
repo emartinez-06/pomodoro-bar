@@ -93,9 +93,10 @@ final class BorderSignaler {
 
     /// Pulses the border between `colorState` and transparent a few times to
     /// mark a phase boundary (a work or rest interval ending), then leaves it
-    /// transparent. The run is paused awaiting the user's advance keypress at
-    /// that point, so the caller's next apply() will naturally settle on
-    /// .clear too - this just makes the boundary itself visible.
+    /// transparent. Whatever the caller's next apply() asks for settles a
+    /// moment later: .clear when the run parks at the boundary waiting to be
+    /// continued, or the incoming phase's color when auto-advance carried it
+    /// straight on - this just makes the boundary itself visible first.
     func flash(_ colorState: ColorState) {
         guard isAvailable, let server, server.isRunning else { return }
         flashTimer?.invalidate()

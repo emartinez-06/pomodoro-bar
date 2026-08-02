@@ -16,6 +16,7 @@ final class Preferences: ObservableObject {
     private static let breakMinutesKey = "breakMinutes"
     private static let longBreakMinutesKey = "longBreakMinutes"
     private static let roundsBeforeLongBreakKey = "roundsBeforeLongBreak"
+    private static let autoAdvanceKey = "autoAdvanceEnabled"
     private static let soundsEnabledKey = "soundsEnabled"
     private static let focusColorKey = "focusColorHex"
     private static let restColorKey = "restColorHex"
@@ -39,6 +40,9 @@ final class Preferences: ObservableObject {
     }
     @Published var roundsBeforeLongBreak: Int {
         didSet { defaults.set(roundsBeforeLongBreak, forKey: Self.roundsBeforeLongBreakKey) }
+    }
+    @Published var autoAdvanceEnabled: Bool {
+        didSet { defaults.set(autoAdvanceEnabled, forKey: Self.autoAdvanceKey) }
     }
     @Published var soundsEnabled: Bool {
         didSet { defaults.set(soundsEnabled, forKey: Self.soundsEnabledKey) }
@@ -71,6 +75,9 @@ final class Preferences: ObservableObject {
         let storedRounds = defaults.integer(forKey: Self.roundsBeforeLongBreakKey)
         roundsBeforeLongBreak = storedRounds == 0 ? 4 : min(max(storedRounds, 2), 12)
 
+        autoAdvanceEnabled = defaults.object(forKey: Self.autoAdvanceKey) == nil
+            || defaults.bool(forKey: Self.autoAdvanceKey)
+
         soundsEnabled = defaults.object(forKey: Self.soundsEnabledKey) == nil
             || defaults.bool(forKey: Self.soundsEnabledKey)
 
@@ -85,6 +92,7 @@ final class Preferences: ObservableObject {
         breakMinutes = 5
         longBreakMinutes = 15
         roundsBeforeLongBreak = 4
+        autoAdvanceEnabled = true
         soundsEnabled = true
         focusColorHex = Self.defaultFocusColorHex
         restColorHex = Self.defaultRestColorHex
