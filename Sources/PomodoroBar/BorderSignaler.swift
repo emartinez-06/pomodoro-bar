@@ -164,12 +164,31 @@ final class BorderSignaler {
         let client = Process()
         client.executableURL = URL(fileURLWithPath: binaryPath)
         client.arguments = arguments
+
+        // The client hands its message to the server over IPC and normally
+        // exits within milliseconds. Waiting for it synchronously (via
+        // waitUntilExit) would block the app's main run loop - and with it
+        // the status item menu and the global hotkey - if the server ever
+        // wedges. So wait asynchronously via terminationHandler instead, with
+        // a timeout that kills both the client and the wedged server, so the
+        // next apply() respawns a fresh one rather than hanging forever.
+        let timeout = DispatchWorkItem { [weak self] in
+            guard client.isRunning else { return }
+            client.terminate()
+            NSLog("BorderSignaler: borders client timed out; restarting server")
+            self?.server?.terminate()
+            self?.server = nil
+            self?.appliedColor = nil
+        }
+        client.terminationHandler = { _ in timeout.cancel() }
+
         do {
             try client.run()
-            client.waitUntilExit()
         } catch {
             NSLog("BorderSignaler: failed to send borders update: \(error)")
+            return
         }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: timeout)
     }
 
     private func reapStrayProcess() {
