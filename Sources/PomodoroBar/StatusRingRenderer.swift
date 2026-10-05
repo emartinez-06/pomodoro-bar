@@ -13,7 +13,7 @@ enum StatusRingRenderer {
             let track = NSBezierPath()
             track.appendArc(withCenter: center, radius: radius, startAngle: 0, endAngle: 360)
             track.lineWidth = lineWidth
-            NSColor.gray.withAlphaComponent(0.35).setStroke()
+            NSColor.gray.withAlphaComponent(0.5).setStroke()
             track.stroke()
 
             if let color, progress > 0 {
