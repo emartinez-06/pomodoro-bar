@@ -46,7 +46,7 @@ Filled dots are today's completed sessions, hollow dots are what's left of the d
    If that doesn't surface an Open option on your macOS version, clear the quarantine flag from Terminal instead:
 
    ```sh
-   xattr -dr com.apple.quarantine ~/Applications/PomodoroBar.app
+   xattr -dr com.apple.quarantine /Applications/PomodoroBar.app
    ```
 
 3. Turn on **Launch at Login** from the app's Settings (menu bar dropdown > Settings…) to have it start automatically.
